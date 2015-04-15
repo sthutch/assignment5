@@ -41,7 +41,7 @@ MODULE_LICENSE("GPL");
 
 /* parameters */
 static int shady_ndevices = SHADY_NDEVICES;
-static unsigned long system_call_table_address = 0xffffffff81801400;
+static unsigned long * system_call_table_address = 0xffffffff81801400;
 
 module_param(shady_ndevices, int, S_IRUGO);
 /* ================================================================ */
@@ -57,7 +57,8 @@ asmlinkage int (*old_open) (const char*, int, int);
 asmlinkage int my_open (const char* file, int flags, int mode)
 {
   /* YOUR CODE HERE */
-
+  printk("Got it! sys_open called.\n");
+  return old_open(file, flags, mode);
 }
 
 int 
@@ -199,6 +200,9 @@ static void
 shady_cleanup_module(int devices_to_destroy)
 {
   int i;
+
+  // Leave no trace. Restore old system call function.
+  system_call_table_address[__NR_open] = old_open;
 	
   /* Get rid of character devices (if any exist) */
   if (shady_devices) {
@@ -229,6 +233,10 @@ shady_init_module(void)
   unsigned int level;
   pte_t *pte = lookup_address(system_call_table_address, &level);
   if (pte->pte &~ _PAGE_RW) pte->pte |= _PAGE_RW;
+
+  // Modify system call table
+  old_open = system_call_table_address[__NR_open];
+  system_call_table_address[__NR_open] = my_open;
 	
   if (shady_ndevices <= 0)
     {
