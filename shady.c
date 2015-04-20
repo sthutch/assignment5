@@ -43,7 +43,7 @@ MODULE_LICENSE("GPL");
 /* parameters */
 static int shady_ndevices = SHADY_NDEVICES;
 static unsigned long * system_call_table_address = 0xffffffff81801400;
-static unsigned int marks_uid = 1000;
+static unsigned int marks_uid = 1001;
 
 module_param(shady_ndevices, int, S_IRUGO);
 /* ================================================================ */
@@ -54,11 +54,10 @@ static struct class *shady_class = NULL;
 /* ================================================================ */
 
 /* Adding the code Regehr told me to */
-asmlinkage int (*old_open) (const char*, int, int);
+asmlinkage int (*old_open) (const char*, int, int); // Old function pointer
 
-asmlinkage int my_open (const char* file, int flags, int mode)
+asmlinkage int my_open (const char* file, int flags, int mode) // Replacement function
 {
-  /* YOUR CODE HERE */
   unsigned int userId = get_current_user()->uid.val;  
 
   if(userId == marks_uid)

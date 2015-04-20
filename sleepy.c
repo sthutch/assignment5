@@ -15,8 +15,7 @@
  ======================================================================== */
 
 /* =========================================================================
- * TODO: - Reset flag and wake up multiple sleeping processes
- *       - Handle negative numbers
+
  ======================================================================== */
 
 #include <linux/version.h>
@@ -46,7 +45,8 @@ MODULE_LICENSE("GPL");
 
 /* parameters */
 static int sleepy_ndevices = SLEEPY_NDEVICES;
-static int flag = -1;
+static int flags[SLEEPY_NDEVICES];
+static int sleeping[SLEEPY_NDEVICES];
 static DECLARE_WAIT_QUEUE_HEAD(myQueue);
 
 module_param(sleepy_ndevices, int, S_IRUGO);
@@ -105,14 +105,23 @@ sleepy_read(struct file *filp, char __user *buf, size_t count,
 	
   /* YOUR CODE HERE */
   printk(KERN_DEBUG "Read from sleepy device %d\n", devNum);
-  flag = devNum;
+  flags[devNum] = 0;
   wake_up_interruptible(&myQueue);
   /* END YOUR CODE */
 	
   mutex_unlock(&dev->sleepy_mutex);
   return retval;
 }
-                
+             
+// Condition function that acquires lock, checks flag, and releases lock
+int myFlagSet(struct sleepy_dev * dev, int devNum)
+{
+  mutex_lock_killable(&dev->sleepy_mutex);
+  int result = flags[devNum] == 0 ? 1 : 0;
+  mutex_unlock(&dev->sleepy_mutex);
+  return result;
+}
+   
 ssize_t 
 sleepy_write(struct file *filp, const char __user *buf, size_t count, 
 	     loff_t *f_pos)
@@ -135,36 +144,35 @@ sleepy_write(struct file *filp, const char __user *buf, size_t count,
     mutex_unlock(&dev->sleepy_mutex);
     return -EINVAL;
   }
-
-  // Convert buf to delay
-  strncpy(mybuf, buf, 4);
-  mybuf[4] = '\0';
-  printk(KERN_DEBUG "Buffer: %s\n", mybuf);
-  result = kstrtol(mybuf, 10, &delay);
-  printk(KERN_DEBUG "result: %d\n", result);
-  if(result != 0)
-  {
-    printk(KERN_DEBUG "kstrtol call failed\n");
-    mutex_unlock(&dev->sleepy_mutex);
-    return result;
-  }
-  printk(KERN_DEBUG "Delay %ld\n", delay);
-
+  
+  // Copy data from buffer
+  delay = (int) *buf;
+ 
   // If argument is negative, don't sleep
   if(delay < 0)
   {
     printk(KERN_DEBUG "Negative sleep value. No sleep\n");
     mutex_unlock(&dev->sleepy_mutex);
-    return 0;
+    return -EINVAL;
   }
 
   // If argument is positive, sleep for appropriate time
+  sleeping[devNum]++;
   mutex_unlock(&dev->sleepy_mutex);
-  retval = wait_event_interruptible_timeout(myQueue, flag == devNum, delay * HZ);
+  retval = wait_event_interruptible_timeout(myQueue, myFlagSet(dev, devNum), delay * HZ);
+  retval = retval / HZ; // Convert to seconds
   mutex_lock_killable(&dev->sleepy_mutex);
+  
+  // Reset flag if need be
+  sleeping[devNum]--;
+  if(sleeping[devNum] == 0) 
+  {
+     flags[devNum] = -1;
+  }
+
   if(retval != 0)
   {
-    printk(KERN_DEBUG "Woken up with %d seconds remaining\n", (int) (retval / HZ));
+    printk(KERN_DEBUG "Woken up with %d seconds remaining\n", retval);
   }
   else
   {
@@ -174,8 +182,10 @@ sleepy_write(struct file *filp, const char __user *buf, size_t count,
   /* END YOUR CODE */
 	
   mutex_unlock(&dev->sleepy_mutex);
-  return count;
+  return retval;
 }
+
+
 
 loff_t 
 sleepy_llseek(struct file *filp, loff_t off, int whence)
@@ -319,7 +329,14 @@ sleepy_init_module(void)
       goto fail;
     }
   }
-  
+
+  /* Initialize flags and sleeping arrays */
+  for (i = 0; i < sleepy_ndevices; i++) {
+    flags[i] = -1;
+    sleeping[i] = 0;
+  }
+ 
+
   printk ("sleepy module loaded\n");
 
   return 0; /* success */
